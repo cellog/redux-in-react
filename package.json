@@ -1,0 +1,24 @@
+{
+  "name": "redux-in-react",
+  "version": "0.1.0",
+  "description": "Async-ready implementation of redux in react using React 16.4+ features",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest test *.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://www.github.com/cellog/redux-in-react.git"
+  },
+  "keywords": [
+    "react",
+    "redux",
+    "context"
+  ],
+  "author": "Gregory Beaver <greg.beaver.cello@gmail.com>",
+  "license": "MIT",
+  "peerDependencies": {
+    "react": "^16.4.1",
+    "react-dom": "^16.4.1"
+  }
+}
