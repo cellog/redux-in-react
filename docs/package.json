@@ -7,7 +7,8 @@
     "react-dom": "^16.4.1",
     "react-scripts": "1.1.4",
     "redux": "^4.0.0",
-    "redux-in-react": "file:../redux-in-react-0.1.0.tgz"
+    "redux-in-react": "file:../redux-in-react-0.1.0.tgz",
+    "redux-saga": "^0.16.0"
   },
   "scripts": {
     "start": "react-scripts start",

@@ -6,7 +6,7 @@ export default class Provider extends Component {
   constructor(props) {
     super(props)
     const store = this.getInitStore()
-    const reducer = (props.reducer || (() => undefined))
+    const reducer = props.reducer
     console.log('using reducer', reducer())
     this.mounted = false
     this.createStore = this.createStore.bind(this)
@@ -14,12 +14,12 @@ export default class Provider extends Component {
     this.state.store = this.createStore(reducer, props.preloadedState, props.enhancer)
     this.state.value = {
       ...this.state.value,
-      getStore: () => this.state.store(),
+      getStore: () => this.state.store,
       state: this.state.state,
     }
-    console.log('before', this.state)
+    console.log('before', this.state.store.getState())
     this.state.value.dispatch({ type: '*' })
-    console.log('after', this.state)
+    console.log('after', this.state.store.getState())
   }
 
   componentDidMount() {
@@ -36,6 +36,17 @@ export default class Provider extends Component {
       preloadedState = undefined
     }
 
+    this.state = {
+      state: preloadedState,
+      reducer,
+      listeners: [],
+      value: {
+        state: preloadedState,
+      }
+    }
+    this.state.store = this.getInitStore()
+    this.state.value.dispatch = this.state.store.dispatch
+
     if (typeof enhancer !== 'undefined') {
       if (typeof enhancer !== 'function') {
         throw new Error('Expected the enhancer to be a function.')
@@ -47,17 +58,6 @@ export default class Provider extends Component {
     if (typeof reducer !== 'function') {
       throw new Error('Expected the reducer to be a function.')
     }
-
-    this.state = {
-      state: preloadedState,
-      reducer,
-      listeners: [],
-      value: {
-        state: preloadedState,
-      }
-    }
-    this.state.store = this.getInitStore()
-    this.state.value.dispatch = this.state.store.dispatch
 
     return this.state.store
   }
@@ -103,13 +103,14 @@ export default class Provider extends Component {
           console.log('synchronous dispatch', action)
           this.state.state = this.state.reducer(this.state.state, action)
           this.state.value.state = this.state.state
+          this.state.listeners.forEach(listener => listener())
           return
         }
         console.log('async dispatch', action)
         this.setState(oldState => {
           const state = oldState.reducer(oldState.state, action)
           return { state, value: { ...oldState.value, state } }
-        })
+        }, () => this.state.listeners.forEach(listener => listener()))
       },
       replaceReducer: reducer => {
         if (!this.mounted) {
