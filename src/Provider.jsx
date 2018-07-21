@@ -2,24 +2,24 @@ import $$observable from 'symbol-observable'
 import React, { Component } from 'react'
 import Context from './Context'
 
+let id = 0
+
+const idMaker = () => {
+  return ++id
+}
+
+
 export default class Provider extends Component {
   constructor(props) {
     super(props)
-    const store = this.getInitStore()
+    this.state = {}
     const reducer = props.reducer
-    console.log('using reducer', reducer())
     this.mounted = false
     this.createStore = this.createStore.bind(this)
-    this.state = {}
-    this.state.store = this.createStore(reducer, props.preloadedState, props.enhancer)
-    this.state.value = {
-      ...this.state.value,
-      getStore: () => this.state.store,
-      state: this.state.state,
-    }
-    console.log('before', this.state.store.getState())
-    this.state.value.dispatch({ type: '*' })
-    console.log('after', this.state.store.getState())
+    const store = this.createStore(reducer, props.preloadedState, props.enhancer)
+    console.log('initial state', this.state)
+    this.myid = store.id
+    console.log('after createStore', this.myid)
   }
 
   componentDidMount() {
@@ -36,53 +36,76 @@ export default class Provider extends Component {
       preloadedState = undefined
     }
 
-    this.state = {
-      state: preloadedState,
-      reducer,
-      listeners: [],
-      value: {
-        state: preloadedState,
-      }
-    }
-    this.state.store = this.getInitStore()
-    this.state.value.dispatch = this.state.store.dispatch
-
     if (typeof enhancer !== 'undefined') {
       if (typeof enhancer !== 'function') {
         throw new Error('Expected the enhancer to be a function.')
       }
 
-      return enhancer(this.createStore)(reducer, preloadedState)
+      console.log('calling enhancer')
+      const store = enhancer(this.createStore)(reducer, preloadedState)
+      console.log('creating state (enhancer)')
+      const myid = store.id
+      this.state = {
+        ...this.state,
+        ['store' + myid]: store,
+        ['value' + myid]: {
+          ...this.state['value' + myid],
+          dispatch: store.dispatch,
+        }
+      }
+      return store
+    }
+
+    const myid = idMaker()
+    console.log('calling regular', myid, reducer(undefined, { type: '*' }))
+    const store = this.getInitStore(myid)
+    const dispatch = store.dispatch
+
+    console.log('creating state')
+    this.state = {
+      ...this.state,
+      ['reducer' + myid]: reducer,
+      ['store' + myid]: store,
+      ['listeners' + myid]: [],
+      ['value' + myid]: {
+        dispatch: store.dispatch,
+        getStore: () => this.state['store' + myid],
+        state: preloadedState,
+      }
     }
 
     if (typeof reducer !== 'function') {
       throw new Error('Expected the reducer to be a function.')
     }
 
-    return this.state.store
+    console.log('before', store.getState(), this.state)
+    dispatch({ type: '@@INIT' })
+    console.log('after', store.getState(), this.state)
+
+    return store
   }
 
-  getInitStore() {
+  getInitStore(id) {
     const mySubscribe = listener => {
       if (!this.mounted) {
-        console.log('synchronous subscribe')
-        this.state.listeners = [...this.state.listeners, listener ]
+        console.log('synchronous subscribe', listener)
+        this.state[`listeners${id}`] = [...this.state[`listeners${id}`], listener ]
         return
       }
-      console.log('async subscribe')
-      this.setState(state => ({ listeners: [...state.listeners, listener ]}),
-        state => () => {
-          this.setState(state => {
-            if (state.listeners.indexOf(listener) !== -1) {
-              const listeners = state.listeners.splice(state.listeners.indexOf(listener), 1)
-              return { listeners }
-            }})
-        })
+      console.log('async subscribe', listener)
+      this.setState(state => ({ [`listeners${id}`]: [...state[`listeners${id}`], listener ]}))
+      return () =>
+        this.setState(state => {
+          console.log('unsubscribe', listener)
+          if (state[`listeners${id}`].indexOf(listener) !== -1) {
+            const listeners = state[`listeners${id}`].splice(state[`listeners${id}`].indexOf(listener), 1)
+            return { [`listeners${id}`]: listeners }
+          }})
     }
     const observable = () => ({
       subscribe(observer) {
         const observe = () => {
-          if (observer.next) observer.next(this.state.state)
+          if (observer.next) observer.next(this.state[`value${id}`].state)
         }
         observe()
         const unsubscribe = mySubscribe(observe)
@@ -93,42 +116,49 @@ export default class Provider extends Component {
         return this
       }
     })
+    const dispatch = action => {
+      if (!this.mounted) {
+        console.log('synchronous dispatch', action, this.state[`value${id}`].state)
+        this.state[`value${id}`].state = this.state[`reducer${id}`](this.state[`value${id}`].state, action)
+        console.log('setting:', this.state[`value${id}`].state)
+        this.state[`listeners${id}`].forEach(listener => listener())
+        return
+      }
+      console.log('async dispatch', action)
+      this.setState(oldState => {
+        const state = oldState[`reducer${id}`](oldState[`value${id}`].state, action)
+        console.log('setting:', state)
+        return { [`value${id}`]: { ...oldState[`value${id}`], state } }
+      }, () => {
+        console.log('updating listeners', this.state)
+        this.state[`listeners${id}`].forEach(listener => listener())
+      })
+    }
     return {
       getState: () => {
-        console.log('getState', this.state.state)
-        return this.state.state
+        console.log('getState', this.state[`value${id}`].state)
+        return this.state[`value${id}`].state
       },
-      dispatch: action => {
-        if (!this.mounted) {
-          console.log('synchronous dispatch', action)
-          this.state.state = this.state.reducer(this.state.state, action)
-          this.state.value.state = this.state.state
-          this.state.listeners.forEach(listener => listener())
-          return
-        }
-        console.log('async dispatch', action)
-        this.setState(oldState => {
-          const state = oldState.reducer(oldState.state, action)
-          return { state, value: { ...oldState.value, state } }
-        }, () => this.state.listeners.forEach(listener => listener()))
-      },
+      dispatch,
       replaceReducer: reducer => {
         if (!this.mounted) {
           console.log('synchronous replaceReducer')
-          this.state.reducer = reducer
+          this.state[`reducer${id}`] = reducer
+          dispatch({ type: '@@REPLACE' })
         } else {
           console.log('async replaceReducer')
-          this.setState({ reducer })
+          this.setState({ [`reducer${id}`]: reducer }, () => dispatch({ type: '@@REPLACE' }))
         }
       },
       subscribe: mySubscribe,
       [$$observable]: observable,
+      id
     }
   }
 
   render() {
     return (
-      <Context.Provider value={this.state.value}>
+      <Context.Provider value={this.state[`value${this.myid}`]}>
         {this.props.children}
       </Context.Provider>
     )
